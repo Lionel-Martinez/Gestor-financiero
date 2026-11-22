@@ -42,7 +42,7 @@ final class EntryValidatorTest extends TestCase
         return ['ledger_account_id' => $acc, 'debit' => $d, 'credit' => $c, 'category_id' => $cat];
     }
 
-    private function run(array $lines, string $currency = 'ARS', string $kind = 'ordinary'): array
+    private function check(array $lines, string $currency = 'ARS', string $kind = 'ordinary'): array
     {
         return (new EntryValidator())->validate(
             ['space_id' => self::PER, 'currency' => $currency, 'kind' => $kind],
@@ -54,49 +54,49 @@ final class EntryValidatorTest extends TestCase
 
     public function test_gasto_valido(): void
     {
-        $this->assertSame([], $this->run([$this->line('expense', '100', '0', 'food'), $this->line('cash', '0', '100')]));
+        $this->assertSame([], $this->check([$this->line('expense', '100', '0', 'food'), $this->line('cash', '0', '100')]));
     }
 
     public function test_ingreso_valido(): void
     {
-        $this->assertSame([], $this->run([$this->line('cash', '5000.50', '0'), $this->line('income', '0', '5000.50', 'salary')]));
+        $this->assertSame([], $this->check([$this->line('cash', '5000.50', '0'), $this->line('income', '0', '5000.50', 'salary')]));
     }
 
     public function test_asiento_desequilibrado_no_valida(): void
     {
-        $errors = $this->run([$this->line('expense', '100', '0', 'food'), $this->line('cash', '0', '99.9999')]);
+        $errors = $this->check([$this->line('expense', '100', '0', 'food'), $this->line('cash', '0', '99.9999')]);
         $this->assertCount(1, $errors);
         $this->assertStringContainsString('no está equilibrado', $errors[0]);
     }
 
     public function test_requiere_dos_apuntes(): void
     {
-        $errors = $this->run([$this->line('cash', '10', '0')]);
+        $errors = $this->check([$this->line('cash', '10', '0')]);
         $this->assertNotEmpty($errors);
     }
 
     public function test_apunte_con_debe_y_haber_a_la_vez(): void
     {
-        $errors = $this->run([$this->line('cash', '10', '10'), $this->line('expense', '0', '0', 'food')]);
+        $errors = $this->check([$this->line('cash', '10', '10'), $this->line('expense', '0', '0', 'food')]);
         $this->assertNotEmpty($errors);
     }
 
     public function test_no_mezcla_monedas(): void
     {
-        $errors = $this->run([$this->line('cash_usd', '10', '0'), $this->line('income', '0', '10', 'salary')], 'ARS');
+        $errors = $this->check([$this->line('cash_usd', '10', '0'), $this->line('income', '0', '10', 'salary')], 'ARS');
         $this->assertCount(1, $errors);
         $this->assertStringContainsString('moneda', $errors[0]);
     }
 
     public function test_cuenta_agrupadora_e_inactiva_rechazadas(): void
     {
-        $this->assertNotEmpty($this->run([$this->line('group', '10', '0'), $this->line('income', '0', '10', 'salary')]));
-        $this->assertNotEmpty($this->run([$this->line('inactive', '10', '0'), $this->line('income', '0', '10', 'salary')]));
+        $this->assertNotEmpty($this->check([$this->line('group', '10', '0'), $this->line('income', '0', '10', 'salary')]));
+        $this->assertNotEmpty($this->check([$this->line('inactive', '10', '0'), $this->line('income', '0', '10', 'salary')]));
     }
 
     public function test_cuenta_de_otro_espacio_rechazada(): void
     {
-        $errors = $this->run([$this->line('lms_cash', '10', '0'), $this->line('income', '0', '10', 'salary')]);
+        $errors = $this->check([$this->line('lms_cash', '10', '0'), $this->line('income', '0', '10', 'salary')]);
         $this->assertCount(1, $errors);
         $this->assertStringContainsString('otro espacio', $errors[0]);
     }
@@ -104,20 +104,20 @@ final class EntryValidatorTest extends TestCase
     public function test_gasto_sin_categoria_rechazado_salvo_fx_o_ajuste(): void
     {
         $lines = [$this->line('expense', '10', '0'), $this->line('cash', '0', '10')];
-        $this->assertNotEmpty($this->run($lines));
-        $this->assertSame([], $this->run($lines, 'ARS', 'fx'));
-        $this->assertSame([], $this->run($lines, 'ARS', 'adjustment'));
+        $this->assertNotEmpty($this->check($lines));
+        $this->assertSame([], $this->check($lines, 'ARS', 'fx'));
+        $this->assertSame([], $this->check($lines, 'ARS', 'adjustment'));
     }
 
     public function test_activo_no_acepta_categoria(): void
     {
-        $errors = $this->run([$this->line('cash', '10', '0', 'food'), $this->line('income', '0', '10', 'salary')]);
+        $errors = $this->check([$this->line('cash', '10', '0', 'food'), $this->line('income', '0', '10', 'salary')]);
         $this->assertNotEmpty($errors);
     }
 
     public function test_categoria_de_otro_espacio_inactiva_o_de_tipo_incorrecto(): void
     {
-        $base = fn (string $cat) => $this->run([$this->line('expense', '10', '0', $cat), $this->line('cash', '0', '10')]);
+        $base = fn (string $cat) => $this->check([$this->line('expense', '10', '0', $cat), $this->line('cash', '0', '10')]);
         $this->assertNotEmpty($base('lms_only'));
         $this->assertNotEmpty($base('old'));
         $this->assertNotEmpty($base('salary'));
@@ -126,11 +126,11 @@ final class EntryValidatorTest extends TestCase
 
     public function test_importe_con_mas_de_4_decimales_rechazado(): void
     {
-        $this->assertNotEmpty($this->run([$this->line('expense', '10.00001', '0', 'food'), $this->line('cash', '0', '10.00001')]));
+        $this->assertNotEmpty($this->check([$this->line('expense', '10.00001', '0', 'food'), $this->line('cash', '0', '10.00001')]));
     }
 
     public function test_importe_cero_rechazado(): void
     {
-        $this->assertNotEmpty($this->run([$this->line('expense', '0', '0', 'food'), $this->line('cash', '0', '0')]));
+        $this->assertNotEmpty($this->check([$this->line('expense', '0', '0', 'food'), $this->line('cash', '0', '0')]));
     }
 }
