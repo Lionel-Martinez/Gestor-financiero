@@ -121,10 +121,10 @@ return new class extends Migration {
             $t->char('ledger_account_id', 36);
             $t->dateTime('created_at', 3)->nullable();
             $t->dateTime('updated_at', 3)->nullable();
-            $t->unique(['financial_account_id', 'currency']);
+            $t->unique(['financial_account_id', 'currency'], 'fac_account_currency_unique');   // nombres explícitos: MySQL limita los identificadores a 64 caracteres
             $t->unique('ledger_account_id');
-            $t->foreign(['financial_account_id', 'space_id'])->references(['id', 'space_id'])->on('financial_accounts')->restrictOnDelete();
-            $t->foreign(['ledger_account_id', 'space_id'])->references(['id', 'space_id'])->on('ledger_accounts')->restrictOnDelete();
+            $t->foreign(['financial_account_id', 'space_id'], 'fac_account_space_fk')->references(['id', 'space_id'])->on('financial_accounts')->restrictOnDelete();
+            $t->foreign(['ledger_account_id', 'space_id'], 'fac_ledger_space_fk')->references(['id', 'space_id'])->on('ledger_accounts')->restrictOnDelete();
             $t->foreign('currency')->references('code')->on('currencies')->restrictOnDelete();
         });
     }
