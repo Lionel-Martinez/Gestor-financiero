@@ -1,0 +1,14 @@
+# MySQL 8.4 LTS para desarrollo y tests (los triggers de inmutabilidad solo existen en MySQL/MariaDB).
+services:
+  mysql:
+    image: mysql:8.4
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci", "--default-time-zone=+00:00"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: gestor_financiero
+      MYSQL_USER: gf_migrator
+      MYSQL_PASSWORD: change-me
+    ports: ["3306:3306"]
+    volumes: ["gf_mysql:/var/lib/mysql"]
+volumes:
+  gf_mysql:
