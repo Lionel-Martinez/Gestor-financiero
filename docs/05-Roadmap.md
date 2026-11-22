@@ -31,3 +31,4 @@ tipo: roadmap
 
 ## Verificación pendiente (importante)
 Ejecutar en una máquina con acceso a Packagist: `backend/install.sh`, `php artisan migrate` sobre **MySQL 8.4** y `php artisan test`. Hasta entonces las migraciones, los triggers y los servicios con base de datos son código sin probar.
+| R-15 | Resumen anual convertido a ARS y pantalla propia de Cuentas | Depende de R-6 (cotizaciones en la app) y de diseño |

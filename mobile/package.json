@@ -15,6 +15,7 @@
     "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.6.10",
     "@capacitor/preferences": "^7.0.4",
+    "@fontsource/dm-sans": "^5.3.0",
     "@ionic/vue": "^8.8.21",
     "@ionic/vue-router": "^8.8.21",
     "ionicons": "^7.4.0",

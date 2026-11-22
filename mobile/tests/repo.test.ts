@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { computeDashboard, createAccount, discardOperation, DomainError, listBalances, markOperation, outboxCounts, recordIncomeOrExpense, recordTransfer } from '../src/data/repo'
+import { computeAnnual, computeDashboard, createAccount, discardOperation, DomainError, listBalances, markOperation, outboxCounts, recordIncomeOrExpense, recordTransfer } from '../src/data/repo'
 import type { SqlDriver } from '../src/db/driver'
 import { initSchema } from '../src/db'
 import { SqlJsDriver } from '../src/db/sqljs'
@@ -131,5 +131,17 @@ describe('operaciones offline', () => {
     expect(await db.all('SELECT * FROM lines')).toEqual(before)
     const [e] = await db.all<{ occurred_at: string }>("SELECT occurred_at FROM entries WHERE kind = 'ordinary'")
     expect(e.occurred_at).toMatch(/T.*Z$/)
+  })
+})
+
+describe('resumen anual', () => {
+  it('agrupa por año contable y moneda, solo con lo confirmado', async () => {
+    const acc = await createAccount(db, { spaceId: PER, name: 'Banco', kind: 'bank', currencies: [{ currency: 'ARS', openingBalance: '10000' }] })
+    await recordIncomeOrExpense(db, { kind: 'income', spaceId: PER, financialAccountId: acc, currency: 'ARS', amount: '4000', categoryId: SALARY, occurredAt: NOW })
+    await recordIncomeOrExpense(db, { kind: 'expense', spaceId: PER, financialAccountId: acc, currency: 'ARS', amount: '1500', categoryId: FOOD, occurredAt: NOW })
+    expect(await computeAnnual(db, [PER])).toEqual([])                       // nada confirmado todavía
+    await confirmAllPendingAsServer()
+    const year = NOW.slice(0, 4)
+    expect(await computeAnnual(db, [PER])).toEqual([{ year, income: { ARS: '4000.0000' }, expense: { ARS: '1500.0000' }, result: { ARS: '2500.0000' } }])   // la apertura no es ingreso
   })
 })

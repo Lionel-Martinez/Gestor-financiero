@@ -18,6 +18,9 @@ interface State {
   currencies: { code: string; name: string }[]
   balances: repo.AccountBalance[]
   dashboard: repo.DashboardData | null
+  movements: repo.RecentEntry[]
+  annual: repo.AnnualRow[]
+  newOp: null | 'income' | 'expense' | 'transfer'
   context: Context
   period: PeriodKey
   custom: { from: string; to: string }
@@ -33,9 +36,9 @@ interface State {
 
 export const useApp = defineStore('app', {
   state: (): State => ({
-    ready: false, db: null, spaces: [], accounts: [], accountCurrencies: [], categories: [], currencies: [], balances: [], dashboard: null,
+    ready: false, db: null, spaces: [], accounts: [], accountCurrencies: [], categories: [], currencies: [], balances: [], dashboard: null, movements: [], annual: [], newOp: null,
     context: 'general', period: 'month', custom: { from: '', to: '' }, counts: { pending: 0, problems: 0 }, problems: [],
-    loggedIn: false, syncing: false, lastSync: null, message: null, theme: 'system', serverUrl: '',
+    loggedIn: false, syncing: false, lastSync: null, message: null, theme: 'dark', serverUrl: '',
   }),
 
   getters: {
@@ -50,7 +53,7 @@ export const useApp = defineStore('app', {
     async init() {
       if (this.ready) return
       this.db = await getDb()
-      this.theme = ((await repo.getMeta(this.db, 'theme')) as ThemeMode | null) ?? 'system'
+      this.theme = ((await repo.getMeta(this.db, 'theme')) as ThemeMode | null) ?? 'dark'
       this.serverUrl = (await repo.getMeta(this.db, 'server_url')) ?? ''
       this.lastSync = await repo.getMeta(this.db, 'last_sync')
       this.loggedIn = await hasSession()
@@ -84,6 +87,8 @@ export const useApp = defineStore('app', {
       this.balances = await repo.listBalances(db, ids)
       const r = rangeFor(this.period, new Date(), this.period === 'custom' ? this.custom : undefined)
       this.dashboard = await repo.computeDashboard(db, ids, r.from, r.to, r.prevFrom, r.prevTo)
+      this.movements = await repo.recentEntries(db, ids, 300)
+      this.annual = await repo.computeAnnual(db, ids)
     },
 
     async setContext(c: Context) { this.context = c; await this.refresh() },

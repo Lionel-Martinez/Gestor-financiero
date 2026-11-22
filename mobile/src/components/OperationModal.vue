@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IonButton, IonButtons, IonContent, IonHeader, IonInput, IonItem, IonLabel, IonModal, IonSelect, IonSelectOption, IonTitle, IonToolbar } from '@ionic/vue'
+import { IonButton, IonButtons, IonContent, IonHeader, IonInput, IonItem, IonLabel, IonModal, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonTitle, IonToolbar } from '@ionic/vue'
 import { computed, ref, watch } from 'vue'
 import { recordIncomeOrExpense, recordTransfer } from '@/data/repo'
 import { useApp } from '@/stores/app'
@@ -9,6 +9,7 @@ const props = defineProps<{ open: boolean; kind: 'income' | 'expense' | 'transfe
 const emit = defineEmits<{ close: [] }>()
 const app = useApp()
 
+const kind = ref<'income' | 'expense' | 'transfer'>(props.kind)
 const spaceId = ref('')
 const accountId = ref('')
 const toSpaceId = ref('')
@@ -19,18 +20,19 @@ const amount = ref('')
 const day = ref(todayLocal())
 const description = ref('')
 
-const title = computed(() => ({ income: 'Nuevo ingreso', expense: 'Nuevo gasto', transfer: 'Transferencia' })[props.kind])
+const title = computed(() => ({ income: 'Nuevo ingreso', expense: 'Nuevo gasto', transfer: 'Transferencia' })[kind.value])
 const fixedContext = computed(() => app.context !== 'general')
 
 // Las tarjetas de crédito son pasivos: no se usan como cuenta de fondos en este formulario (compras en cuotas: roadmap).
 const accountsOf = (space: string) => app.accounts.filter((a) => a.space_id === space && a.kind !== 'credit_card' && a.is_active)
 const currenciesOf = (accId: string) => app.accountCurrencies.filter((c) => c.financial_account_id === accId).map((c) => c.currency)
-const categories = computed(() => app.categories.filter((c) => (c.space_id === null || c.space_id === spaceId.value) && (c.kind === 'both' || c.kind === props.kind)))
+const categories = computed(() => app.categories.filter((c) => (c.space_id === null || c.space_id === spaceId.value) && (c.kind === 'both' || c.kind === kind.value)))
 const commonCurrencies = computed(() => currenciesOf(accountId.value).filter((c) => currenciesOf(toAccountId.value).includes(c)))
-const currencyOptions = computed(() => (props.kind === 'transfer' ? commonCurrencies.value : currenciesOf(accountId.value)))
+const currencyOptions = computed(() => (kind.value === 'transfer' ? commonCurrencies.value : currenciesOf(accountId.value)))
 
 watch(() => props.open, (o) => {
   if (!o) return
+  kind.value = props.kind
   // En Personal o LM Studio el contexto se hereda; en General hay que elegir el destino (spec §4.8).
   spaceId.value = fixedContext.value ? app.activeSpaceIds[0] : ''
   toSpaceId.value = spaceId.value
@@ -38,6 +40,7 @@ watch(() => props.open, (o) => {
   day.value = todayLocal()
 })
 watch(spaceId, () => { accountId.value = ''; categoryId.value = '' })
+watch(kind, () => { categoryId.value = ''; toAccountId.value = ''; currency.value = currencyOptions.value[0] ?? '' })
 watch(toSpaceId, () => { toAccountId.value = '' })
 watch([accountId, toAccountId], () => { currency.value = currencyOptions.value[0] ?? '' })
 
@@ -47,12 +50,12 @@ async function submit() {
   if (!accountId.value || !currency.value) { app.message = 'Elige la cuenta y la moneda.'; return }
   const occurredAt = occurredAtFor(day.value)
   let ok: unknown
-  if (props.kind === 'transfer') {
+  if (kind.value === 'transfer') {
     if (!toAccountId.value) { app.message = 'Elige la cuenta de destino.'; return }
     ok = await app.write((db) => recordTransfer(db, { fromSpaceId: spaceId.value, fromAccountId: accountId.value, toSpaceId: toSpaceId.value, toAccountId: toAccountId.value, currency: currency.value, amount: a, occurredAt, description: description.value }))
   } else {
     if (!categoryId.value) { app.message = 'Elige una categoría.'; return }
-    ok = await app.write((db) => recordIncomeOrExpense(db, { kind: props.kind as 'income' | 'expense', spaceId: spaceId.value, financialAccountId: accountId.value, currency: currency.value, amount: a, categoryId: categoryId.value, occurredAt, description: description.value }))
+    ok = await app.write((db) => recordIncomeOrExpense(db, { kind: kind.value as 'income' | 'expense', spaceId: spaceId.value, financialAccountId: accountId.value, currency: currency.value, amount: a, categoryId: categoryId.value, occurredAt, description: description.value }))
   }
   if (ok) emit('close')
 }
@@ -67,6 +70,11 @@ async function submit() {
       </IonToolbar>
     </IonHeader>
     <IonContent class="ion-padding">
+      <IonSegment :value="kind" style="margin-bottom: 8px" @ionChange="kind = $event.detail.value as typeof kind">
+        <IonSegmentButton value="expense"><IonLabel>Gasto</IonLabel></IonSegmentButton>
+        <IonSegmentButton value="income"><IonLabel>Ingreso</IonLabel></IonSegmentButton>
+        <IonSegmentButton value="transfer"><IonLabel>Transf.</IonLabel></IonSegmentButton>
+      </IonSegment>
       <IonItem v-if="!fixedContext">
         <IonSelect v-model="spaceId" :label="kind === 'transfer' ? 'Espacio de origen' : 'Espacio'" label-placement="stacked" placeholder="Elegir">
           <IonSelectOption v-for="s in app.spaces" :key="s.id" :value="s.id">{{ s.name }}</IonSelectOption>

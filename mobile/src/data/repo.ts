@@ -400,25 +400,7 @@ export async function computeDashboard(db: SqlDriver, spaceIds: string[], from: 
   }
 
   const ph = spaceIds.map(() => '?').join(',')
-  const recent = spaceIds.length
-    ? await db.all<Omit<RecentEntry, 'amount' | 'type' | 'account'>>(
-        `SELECT e.id, e.number, e.kind, e.currency, e.occurred_at, e.description, e.status, s.code AS space_code
-           FROM entries e JOIN spaces s ON s.id = e.space_id
-          WHERE e.space_id IN (${ph}) AND e.status IN ('confirmed','pending') AND e.kind <> 'opening'
-          ORDER BY e.occurred_at DESC LIMIT 5`,
-        spaceIds,
-      )
-    : []
-  const recentWithAmount: RecentEntry[] = []
-  for (const e of recent) {
-    const ls = await db.all<{ debit: string; type: string; system_role: string | null; name: string }>(
-      'SELECT l.debit, a.type, a.system_role, a.name FROM lines l JOIN ledger_accounts a ON a.id = l.ledger_account_id WHERE l.entry_id = ? ORDER BY l.line_no',
-      [e.id],
-    )
-    const type: RecentEntry['type'] = ls.some((l) => l.type === 'income') ? 'income' : ls.some((l) => l.type === 'expense') && e.kind !== 'fx' ? 'expense' : e.kind === 'fx' ? 'conversion' : 'transfer'
-    const account = ls.filter((l) => l.system_role === null && (l.type === 'asset' || l.type === 'liability')).map((l) => l.name).join(' → ')
-    recentWithAmount.push({ ...e, type, account, amount: fromUnits(ls.reduce((a, l) => a + toUnits(l.debit), 0n)) })
-  }
+  const recentWithAmount = await recentEntries(db, spaceIds, 5)
 
   const pendingCount = (await db.all<{ n: number }>("SELECT COUNT(*) AS n FROM entries WHERE status = 'pending' AND space_id IN (" + ph + ')', spaceIds))[0]?.n ?? 0
 
@@ -428,6 +410,55 @@ export async function computeDashboard(db: SqlDriver, spaceIds: string[], from: 
     expenseByCategory: Object.entries(byCat).map(([k, v]) => { const [currency, category] = k.split('|'); return { category, currency, total: fromUnits(v) } }).sort((a, b) => cmp(b.total, a.total)),
     recent: recentWithAmount, pendingCount: Number(pendingCount),
   }
+}
+
+/** Últimos movimientos (sin asientos de apertura), del más reciente al más antiguo. */
+export async function recentEntries(db: SqlDriver, spaceIds: string[], limit: number): Promise<RecentEntry[]> {
+  if (!spaceIds.length) return []
+  const ph = spaceIds.map(() => '?').join(',')
+  const recent = await db.all<Omit<RecentEntry, 'amount' | 'type' | 'account'>>(
+    `SELECT e.id, e.number, e.kind, e.currency, e.occurred_at, e.description, e.status, s.code AS space_code
+       FROM entries e JOIN spaces s ON s.id = e.space_id
+      WHERE e.space_id IN (${ph}) AND e.status IN ('confirmed','pending') AND e.kind <> 'opening'
+      ORDER BY e.occurred_at DESC LIMIT ${Math.max(1, Math.floor(limit))}`,
+    spaceIds,
+  )
+  const out: RecentEntry[] = []
+  for (const e of recent) {
+    const ls = await db.all<{ debit: string; type: string; system_role: string | null; name: string }>(
+      'SELECT l.debit, a.type, a.system_role, a.name FROM lines l JOIN ledger_accounts a ON a.id = l.ledger_account_id WHERE l.entry_id = ? ORDER BY l.line_no',
+      [e.id],
+    )
+    const type: RecentEntry['type'] = ls.some((l) => l.type === 'income') ? 'income' : ls.some((l) => l.type === 'expense') && e.kind !== 'fx' ? 'expense' : e.kind === 'fx' ? 'conversion' : 'transfer'
+    const account = ls.filter((l) => l.system_role === null && (l.type === 'asset' || l.type === 'liability')).map((l) => l.name).join(' → ')
+    out.push({ ...e, type, account, amount: fromUnits(ls.reduce((a, l) => a + toUnits(l.debit), 0n)) })
+  }
+  return out
+}
+
+export interface AnnualRow { year: string; income: Record<string, string>; expense: Record<string, string>; result: Record<string, string> }
+
+/** Ingresos y gastos confirmados por año contable y moneda (nunca se mezclan monedas). Años más recientes primero. */
+export async function computeAnnual(db: SqlDriver, spaceIds: string[]): Promise<AnnualRow[]> {
+  const rows = await lineRows(db, spaceIds)
+  const inc: Record<string, Record<string, bigint>> = {}
+  const exp: Record<string, Record<string, bigint>> = {}
+  for (const r of rows) {
+    if (r.status !== 'confirmed') continue
+    const year = dateOf(r).slice(0, 4)
+    const d = toUnits(r.debit)
+    const c = toUnits(r.credit)
+    if (r.type === 'income') bump((inc[year] ??= {}), r.currency, c - d)
+    if (r.type === 'expense') bump((exp[year] ??= {}), r.currency, d - c)
+  }
+  const years = [...new Set([...Object.keys(inc), ...Object.keys(exp)])].sort().reverse()
+  return years.map((year) => {
+    const i = inc[year] ?? {}
+    const e = exp[year] ?? {}
+    const res: Record<string, bigint> = {}
+    for (const k of new Set([...Object.keys(i), ...Object.keys(e)])) res[k] = (i[k] ?? 0n) - (e[k] ?? 0n)
+    return { year, income: strMap(i), expense: strMap(e), result: strMap(res) }
+  })
 }
 
 /** Variación porcentual informativa (solo presentación; no se persiste ni se usa para contabilizar). */

@@ -27,3 +27,11 @@ Pediste avanzar directo a la V1 sin cerrar las revisiones pendientes. Tomé la o
 | S-7 | Acceso | V1 de **un solo usuario** (alta por `php artisan gf:create-user`, sin registro público). El modelo ya separa por `user_id`/espacio para crecer a más roles. | [[04-Seguridad-y-despliegue]] |
 
 Las tensiones y su resolución completa están en [[02-Arquitectura]] y [[03-Modelo-de-datos]].
+
+## Decisiones aprobadas (2026-11-22)
+
+- **S-1 a S-7 aprobados** por Lionel ("si lo apruebo"). S-4 sigue sujeta a la revisión de privacidad y S-3 se retoma al implementar [[05-Roadmap]] R-1.
+- **D-1 Diseño visual: propuesta B (oscura)** elegida entre A (clara) y B. Fondo casi negro `#0E1311`, verde lima `#B8F35B` como color principal, ingresos azul `#6FB1FF`, gastos naranja `#FFA05C`, tipografía DM Sans, formas con poco redondeo. Maquetas en el lienzo "Gestor Financiero — Maquetas v1".
+- **D-2 Resumen anual**: tabla año por año (ingresos, gastos, resultado) por fecha contable, **por moneda**. La conversión "Todo en ARS" queda pendiente hasta que la app reciba cotizaciones ([[05-Roadmap]] R-6).
+- **D-3 Navegación**: barra inferior Inicio · Movimientos · Nuevo · Anual; Cuentas sigue dentro de Inicio (pantalla de Cuentas sin diseñar).
+

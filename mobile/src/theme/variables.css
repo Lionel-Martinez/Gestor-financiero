@@ -1,16 +1,45 @@
 :root {
-  --gf-income: #1f9d55;
-  --gf-expense: #d64545;
+  --ion-font-family: 'DM Sans', system-ui, sans-serif;
+  --gf-income: #1d5fa8;
+  --gf-expense: #b54708;
   --gf-warn: #c98a00;
-  --gf-card-radius: 14px;
+  --gf-card-radius: 8px;
+  --ion-color-primary: #0f6b54;
+  --ion-color-primary-rgb: 15, 107, 84;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: #0d5e4a;
+  --ion-color-primary-tint: #277a64;
 }
+/* Propuesta B (oscura): fondo casi negro, verde lima como color principal, ingresos azules y gastos naranjas. */
 .ion-palette-dark {
-  --gf-income: #4cc38a;
-  --gf-expense: #ff7a7a;
+  --gf-income: #6fb1ff;
+  --gf-expense: #ffa05c;
   --gf-warn: #f2b84b;
+  --ion-background-color: #0e1311;
+  --ion-background-color-rgb: 14, 19, 17;
+  --ion-text-color: #edf2ef;
+  --ion-text-color-rgb: 237, 242, 239;
+  --ion-color-medium: #9aa7a0;
+  --ion-card-background: #171e1b;
+  --ion-item-background: #171e1b;
+  --ion-toolbar-background: #0e1311;
+  --ion-tab-bar-background: #171e1b;
+  --ion-border-color: #26302b;
+  --ion-color-step-150: #26302b;
+  --ion-color-primary: #b8f35b;
+  --ion-color-primary-rgb: 184, 243, 91;
+  --ion-color-primary-contrast: #0e1311;
+  --ion-color-primary-contrast-rgb: 14, 19, 17;
+  --ion-color-primary-shade: #a2d64f;
+  --ion-color-primary-tint: #bff56a;
 }
+ion-segment { --background: var(--ion-color-step-100, #e7eae5); border-radius: 8px; }
+.ion-palette-dark ion-segment { --background: #1b2420; }
+ion-tab-bar { border-top: 1px solid var(--ion-border-color, #26302b); }
+ion-tab-button { --color-selected: var(--ion-color-primary); font-weight: 600; }
 .gf-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 12px; }
-.gf-card { border-radius: var(--gf-card-radius); background: var(--ion-card-background, var(--ion-item-background, #fff)); padding: 12px 14px; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.gf-card { border-radius: var(--gf-card-radius); background: var(--ion-card-background, var(--ion-item-background, #fff)); padding: 12px 14px; }
 .gf-card h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ion-color-medium); }
 .gf-amount { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 16px; line-height: 1.35; }
 .gf-income { color: var(--gf-income); }
@@ -18,9 +47,10 @@
 .gf-muted { color: var(--ion-color-medium); font-size: 12px; }
 .gf-section { padding: 14px 12px 4px; font-size: 14px; font-weight: 700; }
 .gf-panel { margin: 0 12px 10px; }
-.gf-bar { height: 8px; border-radius: 4px; background: var(--ion-color-step-150, #ddd); overflow: hidden; }
-.gf-bar > span { display: block; height: 100%; border-radius: 4px; }
+.gf-bar { height: 8px; border-radius: 2px; background: var(--ion-color-step-150, #ddd); overflow: hidden; }
+.gf-bar > span { display: block; height: 100%; border-radius: 2px; }
 .gf-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; }
-.gf-chip { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--ion-color-step-150, #e5e5e5); }
-.gf-chip.pending { background: var(--gf-warn); color: #000; }
+.gf-chip { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; background: var(--ion-color-step-150, #e5e5e5); }
+.gf-chip.pending { background: #3a2a14; color: #ffc285; }
+.gf-chip.ok { background: #163326; color: #7fe3b0; }
 .gf-empty { color: var(--ion-color-medium); font-size: 13px; padding: 6px 0; }
