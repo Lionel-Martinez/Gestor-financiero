@@ -15,12 +15,13 @@ composer require laravel/sanctum --no-interaction
 # Superponer nuestros archivos sobre el skeleton (sin pisar vendor/ ni .git)
 rsync -a --exclude='install.sh' --exclude='README.md' --exclude='vendor' --exclude='.git' "$HERE/" "$TMP/app/"
 rm -f routes/web.php && printf '<?php\n' > routes/web.php
-rm -rf "$TMP/app/database/migrations/0001_01_01_000000_create_users_table.php.orig" 2>/dev/null || true
+rm -f tests/Feature/ExampleTest.php   # espera una ruta web '/', que este proyecto (API pura) no tiene
+rm -f "$TMP/app/database/database.sqlite"   # el skeleton migra SQLite al crearse: no debe quedar
 
 # Mover el resultado a la carpeta del proyecto
 rsync -a "$TMP/app/" "$HERE/"
 cd "$HERE"
-cp -n .env.example .env
+cp .env.example .env   # el .env del skeleton apunta a SQLite; este apunta a MySQL
 php artisan key:generate
 echo
 echo "Listo. Siguientes pasos:"

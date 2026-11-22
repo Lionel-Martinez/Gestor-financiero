@@ -6,15 +6,13 @@ namespace App\Providers;
 
 use App\Domain\Ledger\EntryValidator;
 use Illuminate\Support\ServiceProvider;
-use Laravel\Sanctum\Sanctum;
 
 final class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // Los usuarios usan UUID: la tabla personal_access_tokens es propia (ver migración de usuarios).
-        Sanctum::ignoreMigrations();
-
+        // Sanctum 4 no carga migraciones por sí solo: la tabla personal_access_tokens (con tokenable_id UUID)
+        // está en la migración de usuarios de este proyecto.
         $this->app->singleton(EntryValidator::class);
     }
 
