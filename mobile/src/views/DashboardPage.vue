@@ -92,7 +92,7 @@ const hasPending = (b: AccountBalance) => !isZero(b.pendingDelta)
       </div>
 
       <template v-else-if="d">
-        <div v-if="app.counts.pending || app.counts.problems" class="gf-panel gf-card" style="margin-top: 10px">
+        <div v-if="app.counts.pending || app.counts.problems" class="gf-panel gf-card">
           <div class="gf-row">
             <span><IonIcon :icon="cloudOfflineOutline" /> <b>{{ app.counts.pending }}</b> operación(es) pendientes de sincronizar<template v-if="app.counts.problems"> · <b class="gf-expense">{{ app.counts.problems }}</b> con problemas</template></span>
             <IonButton size="small" fill="clear" router-link="/ajustes">Ver</IonButton>

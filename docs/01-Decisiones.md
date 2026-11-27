@@ -34,4 +34,5 @@ Las tensiones y su resolución completa están en [[02-Arquitectura]] y [[03-Mod
 - **D-1 Diseño visual: propuesta B (oscura)** elegida entre A (clara) y B. Fondo casi negro `#0E1311`, verde lima `#B8F35B` como color principal, ingresos azul `#6FB1FF`, gastos naranja `#FFA05C`, tipografía DM Sans, formas con poco redondeo. Maquetas en el lienzo "Gestor Financiero — Maquetas v1".
 - **D-2 Resumen anual**: tabla año por año (ingresos, gastos, resultado) por fecha contable, **por moneda**. La conversión "Todo en ARS" queda pendiente hasta que la app reciba cotizaciones ([[05-Roadmap]] R-6).
 - **D-3 Navegación**: barra inferior Inicio · Movimientos · Nuevo · Anual; Cuentas sigue dentro de Inicio (pantalla de Cuentas sin diseñar).
+- **D-4 Rediseño visual: propuesta C** (clara, sobria, verde `#1E7B4F`, listas densas tipo extracto, barra superior verde con pestañas subrayadas, sistema tipográfico del dispositivo). Reemplaza a D-1 (B oscura) porque la B resultó "demasiado IA". El modo oscuro sigue disponible en Ajustes con la misma paleta verde. Pendiente de que Lionel la vea en la app real.
 

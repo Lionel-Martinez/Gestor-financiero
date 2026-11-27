@@ -34,7 +34,7 @@ const rows = computed(() => {
         <IonSegmentButton v-for="c in currencies" :key="c" :value="c"><IonLabel>{{ c }}</IonLabel></IonSegmentButton>
       </IonSegment>
       <div v-if="!rows.length" class="gf-panel gf-card" style="margin-top: 12px"><div class="gf-empty">Todavía no hay ingresos ni gastos confirmados. Aparecerán año por año cuando el servidor confirme tus operaciones.</div></div>
-      <div v-for="r in rows" :key="r.year" class="gf-panel gf-card" style="margin-top: 10px">
+      <div v-for="r in rows" :key="r.year" class="gf-panel gf-card">
         <div class="gf-row" style="padding-top: 0"><span style="font-size: 18px; font-weight: 700">{{ r.year }}</span><span class="gf-muted">{{ r.tag }}</span></div>
         <div class="gf-row"><span>Ingresos</span><span class="gf-amount gf-income">{{ formatAmount(r.income) }}</span></div>
         <div class="gf-bar"><span :style="{ width: r.iw + '%', background: 'var(--gf-income)' }" /></div>

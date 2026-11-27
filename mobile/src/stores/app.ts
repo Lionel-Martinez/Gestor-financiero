@@ -38,7 +38,7 @@ export const useApp = defineStore('app', {
   state: (): State => ({
     ready: false, db: null, spaces: [], accounts: [], accountCurrencies: [], categories: [], currencies: [], balances: [], dashboard: null, movements: [], annual: [], newOp: null,
     context: 'general', period: 'month', custom: { from: '', to: '' }, counts: { pending: 0, problems: 0 }, problems: [],
-    loggedIn: false, syncing: false, lastSync: null, message: null, theme: 'dark', serverUrl: '',
+    loggedIn: false, syncing: false, lastSync: null, message: null, theme: 'light', serverUrl: '',
   }),
 
   getters: {
@@ -53,7 +53,7 @@ export const useApp = defineStore('app', {
     async init() {
       if (this.ready) return
       this.db = await getDb()
-      this.theme = ((await repo.getMeta(this.db, 'theme')) as ThemeMode | null) ?? 'dark'
+      this.theme = ((await repo.getMeta(this.db, 'theme')) as ThemeMode | null) ?? 'light'
       this.serverUrl = (await repo.getMeta(this.db, 'server_url')) ?? ''
       this.lastSync = await repo.getMeta(this.db, 'last_sync')
       this.loggedIn = await hasSession()

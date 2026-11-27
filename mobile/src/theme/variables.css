@@ -1,21 +1,33 @@
+/* Propuesta C: clara, sobria y verde. Listas densas tipo extracto, un único color de marca. */
 :root {
-  --ion-font-family: 'DM Sans', system-ui, sans-serif;
-  --gf-income: #1d5fa8;
-  --gf-expense: #b54708;
+  --ion-font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --gf-income: #1e7b4f;
+  --gf-expense: #1b1f1d;
   --gf-warn: #c98a00;
-  --gf-card-radius: 8px;
-  --ion-color-primary: #0f6b54;
-  --ion-color-primary-rgb: 15, 107, 84;
+  --gf-line: #e1e5e2;
+  --gf-card-radius: 0;
+  --ion-color-primary: #1e7b4f;
+  --ion-color-primary-rgb: 30, 123, 79;
   --ion-color-primary-contrast: #ffffff;
   --ion-color-primary-contrast-rgb: 255, 255, 255;
-  --ion-color-primary-shade: #0d5e4a;
-  --ion-color-primary-tint: #277a64;
+  --ion-color-primary-shade: #1a6c46;
+  --ion-color-primary-tint: #358861;
+  --ion-background-color: #f2f4f3;
+  --ion-background-color-rgb: 242, 244, 243;
+  --ion-text-color: #1b1f1d;
+  --ion-text-color-rgb: 27, 31, 29;
+  --ion-color-medium: #5f6b65;
+  --ion-card-background: #ffffff;
+  --ion-item-background: #ffffff;
+  --ion-tab-bar-background: #ffffff;
+  --ion-border-color: #e1e5e2;
+  --ion-color-step-150: #e1e5e2;
 }
-/* Propuesta B (oscura): fondo casi negro, verde lima como color principal, ingresos azules y gastos naranjas. */
 .ion-palette-dark {
-  --gf-income: #6fb1ff;
-  --gf-expense: #ffa05c;
+  --gf-income: #7fe3b0;
+  --gf-expense: #edf2ef;
   --gf-warn: #f2b84b;
+  --gf-line: #26302b;
   --ion-background-color: #0e1311;
   --ion-background-color-rgb: 14, 19, 17;
   --ion-text-color: #edf2ef;
@@ -23,34 +35,41 @@
   --ion-color-medium: #9aa7a0;
   --ion-card-background: #171e1b;
   --ion-item-background: #171e1b;
-  --ion-toolbar-background: #0e1311;
   --ion-tab-bar-background: #171e1b;
   --ion-border-color: #26302b;
   --ion-color-step-150: #26302b;
-  --ion-color-primary: #b8f35b;
-  --ion-color-primary-rgb: 184, 243, 91;
-  --ion-color-primary-contrast: #0e1311;
-  --ion-color-primary-contrast-rgb: 14, 19, 17;
-  --ion-color-primary-shade: #a2d64f;
-  --ion-color-primary-tint: #bff56a;
+  --ion-color-primary: #3fae7a;
+  --ion-color-primary-rgb: 63, 174, 122;
 }
-ion-segment { --background: var(--ion-color-step-100, #e7eae5); border-radius: 8px; }
-.ion-palette-dark ion-segment { --background: #1b2420; }
-ion-tab-bar { border-top: 1px solid var(--ion-border-color, #26302b); }
+/* Barra superior verde con pestañas subrayadas */
+ion-toolbar { --background: #1e7b4f; --color: #ffffff; --border-width: 0; }
+ion-toolbar ion-button { --color: #ffffff; }
+ion-toolbar ion-segment { --background: transparent; border-radius: 0; }
+ion-toolbar ion-segment-button {
+  --color: #cfe6da; --color-checked: #ffffff; --indicator-color: #ffffff; --background-checked: transparent;
+  --border-radius: 0; font-weight: 600; min-height: 44px; text-transform: none; letter-spacing: 0;
+}
+ion-toolbar ion-segment-button::part(indicator-background) { border-radius: 0; height: 3px; top: auto; bottom: 0; }
+/* Filtros fuera de la barra: botones tipo chip */
+ion-content > ion-segment, .gf-card ion-segment { --background: #e9edea; border-radius: 8px; }
+.ion-palette-dark ion-content > ion-segment, .ion-palette-dark .gf-card ion-segment { --background: #1b2420; }
+ion-tab-bar { border-top: 1px solid var(--gf-line); --background: var(--ion-tab-bar-background); }
 ion-tab-button { --color-selected: var(--ion-color-primary); font-weight: 600; }
-.gf-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 12px; }
-.gf-card { border-radius: var(--gf-card-radius); background: var(--ion-card-background, var(--ion-item-background, #fff)); padding: 12px 14px; }
+
+.gf-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; padding: 0; background: var(--gf-line); border-top: 1px solid var(--gf-line); border-bottom: 1px solid var(--gf-line); }
+.gf-card { border-radius: 0; background: var(--ion-card-background, #fff); padding: 12px 16px; }
 .gf-card h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ion-color-medium); }
-.gf-amount { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 16px; line-height: 1.35; }
+.gf-amount { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; line-height: 1.35; }
 .gf-income { color: var(--gf-income); }
 .gf-expense { color: var(--gf-expense); }
 .gf-muted { color: var(--ion-color-medium); font-size: 12px; }
-.gf-section { padding: 14px 12px 4px; font-size: 14px; font-weight: 700; }
-.gf-panel { margin: 0 12px 10px; }
+.gf-section { padding: 14px 16px 6px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ion-color-medium); }
+.gf-panel { margin: 0 0 1px; border-bottom: 1px solid var(--gf-line); }
 .gf-bar { height: 8px; border-radius: 2px; background: var(--ion-color-step-150, #ddd); overflow: hidden; }
 .gf-bar > span { display: block; height: 100%; border-radius: 2px; }
-.gf-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; }
-.gf-chip { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; background: var(--ion-color-step-150, #e5e5e5); }
-.gf-chip.pending { background: #3a2a14; color: #ffc285; }
-.gf-chip.ok { background: #163326; color: #7fe3b0; }
+.gf-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--gf-line); }
+.gf-row:last-child { border-bottom: 0; }
+.gf-chip { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px; background: var(--ion-color-step-150, #e5e5e5); }
+.gf-chip.pending { background: #fff1dc; color: #7a4b00; }
+.gf-chip.ok { background: transparent; color: var(--gf-income); padding-left: 0; }
 .gf-empty { color: var(--ion-color-medium); font-size: 13px; padding: 6px 0; }
