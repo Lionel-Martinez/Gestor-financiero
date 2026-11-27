@@ -42,5 +42,5 @@ Las tensiones y su resolución completa están en [[02-Arquitectura]] y [[03-Mod
   4. El importe se reparte en partes iguales a 4 decimales y el resto va a la **última cuota**.
   5. **Pagar un resumen** es una transferencia desde una cuenta de fondos a la tarjeta (Debe tarjeta / Haber fondos) por el total del resumen y marca esas cuotas como pagadas. En V1 solo se paga el resumen completo.
   6. Sin interés: el interés de las cuotas (S-3) queda para una segunda etapa.
-  - Etapas: A) reglas de cálculo (hecha, con tests en servidor y app); B) tablas y operaciones en el servidor; C) sincronización y base local; D) pantallas (compra en cuotas y resúmenes).
-
+  - Etapas: A) reglas de cálculo (hecha, con tests en servidor y app); B) tablas y operaciones en el servidor (hecha, tests pendientes de correr por Lionel); C) sincronización y base local; D) pantallas (compra en cuotas y resúmenes).
+- **D-5 aprobada por Lionel (2026-11-27)**: las seis reglas. Operaciones del servidor: `card_purchase` (asiento por el precio completo + cuotas), `card_payment` (resumen completo) y reversión total de compra (cancela cuotas) o de pago (reabre cuotas); no se revierte una compra con cuotas pagadas ni de forma parcial.

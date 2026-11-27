@@ -14,7 +14,7 @@ tipo: roadmap
 ## Falta para completar la V1 del documento de diseño
 | Id | Módulo | Nota |
 |---|---|---|
-| R-1 | Tarjetas, compras en cuotas, resúmenes | En curso (D-5): etapa A hecha; faltan B, C y D. Interés de cuotas (S-3) en segunda etapa |
+| R-1 | Tarjetas, compras en cuotas, resúmenes | En curso (D-5): etapas A y B (servidor) hechas; faltan C (sincronización y base local) y D (pantallas). Interés de cuotas (S-3) en segunda etapa |
 | R-2 | Recurrencias, obligaciones, comprobantes, cobros previstos | Alimenta los paneles "próximos" del dashboard |
 | R-3 | Préstamos y deudas (cronogramas) | |
 | R-4 | Presupuestos, metas y dinero reservado | |

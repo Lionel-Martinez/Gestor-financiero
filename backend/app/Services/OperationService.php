@@ -40,6 +40,8 @@ final class OperationService
                 'transfer' => $this->transfer($userId, $deviceId, $p, $syncOpId),
                 'interspace_transfer' => $this->interSpaceTransfer($userId, $deviceId, $p, $syncOpId),
                 'conversion' => $this->conversion($userId, $deviceId, $p, $syncOpId),
+                'card_purchase' => $this->cardPurchase($userId, $deviceId, $p, $syncOpId),
+                'card_payment' => $this->cardPayment($userId, $deviceId, $p, $syncOpId),
                 'account_create' => $this->createAccount($userId, $deviceId, $p),
                 'category_create' => $this->createCategory($userId, $deviceId, $p),
                 'reverse' => $this->reverse($userId, $deviceId, $p, $syncOpId),
@@ -60,7 +62,7 @@ final class OperationService
     public function updateEntity(string $userId, string $deviceId, string $entity, string $id, array $changes, ?int $baseVersion): array
     {
         [$table, $allowed] = match ($entity) {
-            'financial_account' => ['financial_accounts', ['name', 'alias', 'is_active', 'is_archived']],
+            'financial_account' => ['financial_accounts', ['name', 'alias', 'is_active', 'is_archived', 'closing_day', 'due_day']],
             'category' => ['categories', ['name', 'is_active', 'group_key']],
             default => throw LedgerException::of("Entidad no editable: {$entity}", 'unsupported_entity'),
         };
@@ -78,6 +80,12 @@ final class OperationService
         $set = array_intersect_key($changes, array_flip($allowed));
         if ($set === []) {
             throw LedgerException::of('No hay campos editables en el cambio.', 'nothing_to_update');
+        }
+
+        foreach (['closing_day', 'due_day'] as $k) {
+            if (array_key_exists($k, $set) && $set[$k] !== null && (!is_numeric($set[$k]) || (int) $set[$k] < 1 || (int) $set[$k] > 28)) {
+                throw LedgerException::of('El día de cierre y el de vencimiento deben estar entre 1 y 28.', 'invalid_payload');
+            }
         }
 
         $now = now()->utc()->format('Y-m-d H:i:s.v');
@@ -200,6 +208,87 @@ final class OperationService
         ];
     }
 
+    /**
+     * Compra con tarjeta de crédito en 1 a 60 cuotas sin interés (D-5): un único asiento por el precio completo
+     * (Debe gasto / Haber tarjeta) más el cronograma de cuotas por resumen.
+     */
+    private function cardPurchase(string $userId, string $deviceId, array $p, ?string $syncOpId): array
+    {
+        $this->need($p, ['space_id', 'financial_account_id', 'currency', 'amount', 'category_id', 'occurred_at']);
+        $this->assertSpaceAccess($userId, $p['space_id']);
+        $count = (int) ($p['installments'] ?? 1);
+
+        $card = DB::table('financial_accounts')->where('id', $p['financial_account_id'])->where('space_id', $p['space_id'])->first();
+        if ($card === null || $card->kind !== 'credit_card') {
+            throw LedgerException::of('La cuenta no es una tarjeta de crédito de este espacio.', 'not_a_card');
+        }
+        if ($card->closing_day === null || $card->due_day === null) {
+            throw LedgerException::of('Configure el día de cierre y el de vencimiento de la tarjeta antes de cargar compras.', 'card_not_configured');
+        }
+        $date = $p['purchase_date'] ?? CarbonImmutable::parse($p['occurred_at'])->utc()->format('Y-m-d');
+        $plan = \App\Domain\Cards\Installments::schedule($date, (int) $card->closing_day, (int) $card->due_day, $p['amount'], $count);
+
+        return DB::transaction(function () use ($userId, $deviceId, $p, $syncOpId, $plan, $count) {
+            $funds = $this->fundsAccount($p['space_id'], $p['financial_account_id'], $p['currency']);
+            $posting = Posting::expense($p['space_id'], $p['currency'], $funds, $this->coa->system($p['space_id'], 'expense_general'), $p['amount'], $p['category_id'], $p['occurred_at'], $p['description'] ?? '');
+            $operationId = $this->operation($userId, $deviceId, 'card_purchase', $p['occurred_at']);
+            $id = $this->ledger->createEntry($posting, $userId, $deviceId, $operationId, $syncOpId, $p['entry_id'] ?? null);
+            $conf = $this->ledger->confirm($id, $userId, $deviceId);
+
+            $now = now()->utc()->format('Y-m-d H:i:s.v');
+            $ids = $p['installment_ids'] ?? [];
+            $rows = [];
+            foreach ($plan as $i => $c) {
+                $rows[] = [
+                    'id' => $ids[$i] ?? (string) Str::uuid(), 'space_id' => $p['space_id'], 'financial_account_id' => $p['financial_account_id'],
+                    'entry_id' => $id, 'installment_no' => $c['no'], 'installments_total' => $count, 'currency' => $p['currency'],
+                    'amount' => $c['amount'], 'statement_month' => $c['statement_month'], 'due_date' => $c['due_date'],
+                    'status' => 'open', 'version' => 1, 'created_at' => $now, 'updated_at' => $now,
+                ];
+            }
+            DB::table('card_installments')->insert($rows);
+
+            return ['operation_id' => $operationId, 'entries' => [['id' => $id, 'number' => $conf['number']]], 'installments' => array_column($rows, 'id')];
+        });
+    }
+
+    /** Pago del resumen completo: transferencia de una cuenta de fondos a la tarjeta (Debe tarjeta / Haber fondos). */
+    private function cardPayment(string $userId, string $deviceId, array $p, ?string $syncOpId): array
+    {
+        $this->need($p, ['space_id', 'financial_account_id', 'from_financial_account_id', 'currency', 'statement_month', 'occurred_at']);
+        $this->assertSpaceAccess($userId, $p['space_id']);
+
+        return DB::transaction(function () use ($userId, $deviceId, $p, $syncOpId) {
+            $card = DB::table('financial_accounts')->where('id', $p['financial_account_id'])->where('space_id', $p['space_id'])->first();
+            if ($card === null || $card->kind !== 'credit_card') {
+                throw LedgerException::of('La cuenta no es una tarjeta de crédito de este espacio.', 'not_a_card');
+            }
+            $due = DB::table('card_installments')
+                ->where('financial_account_id', $p['financial_account_id'])->where('currency', $p['currency'])
+                ->where('statement_month', $p['statement_month'])->where('status', 'open')
+                ->lockForUpdate()->get();
+            if ($due->isEmpty()) {
+                throw LedgerException::of('Ese resumen no tiene cuotas pendientes de pago.', 'nothing_due');
+            }
+            $total = '0.0000';
+            foreach ($due as $row) {
+                $total = \App\Domain\Decimal::add($total, (string) $row->amount);
+            }
+
+            $from = $this->fundsAccount($p['space_id'], $p['from_financial_account_id'], $p['currency']);
+            $to = $this->fundsAccount($p['space_id'], $p['financial_account_id'], $p['currency']);
+            $posting = Posting::ownTransfer($p['space_id'], $p['currency'], $from, $to, $total, $p['occurred_at'], $p['description'] ?? "Pago de resumen {$p['statement_month']}");
+            $operationId = $this->operation($userId, $deviceId, 'card_payment', $p['occurred_at']);
+            $id = $this->ledger->createEntry($posting, $userId, $deviceId, $operationId, $syncOpId, $p['entry_id'] ?? null);
+            $conf = $this->ledger->confirm($id, $userId, $deviceId);
+
+            $now = now()->utc()->format('Y-m-d H:i:s.v');
+            DB::table('card_installments')->whereIn('id', $due->pluck('id'))->update(['status' => 'paid', 'paid_entry_id' => $id, 'paid_at' => $now, 'updated_at' => $now]);
+
+            return ['operation_id' => $operationId, 'entries' => [['id' => $id, 'number' => $conf['number']]], 'amount' => $total, 'installments_paid' => $due->count()];
+        });
+    }
+
     private function createAccount(string $userId, string $deviceId, array $p): array
     {
         $this->need($p, ['space_id', 'name', 'kind', 'currencies']);
@@ -211,10 +300,16 @@ final class OperationService
         $id = $p['id'] ?? (string) Str::uuid();
         $now = now()->utc()->format('Y-m-d H:i:s.v');
         $isCard = $p['kind'] === 'credit_card';
+        foreach (['closing_day', 'due_day'] as $k) {
+            if (isset($p[$k]) && (!$isCard || !is_numeric($p[$k]) || (int) $p[$k] < 1 || (int) $p[$k] > 28)) {
+                throw LedgerException::of('El día de cierre y el de vencimiento solo aplican a tarjetas y van de 1 a 28.', 'invalid_payload');
+            }
+        }
 
         DB::table('financial_accounts')->insert([
             'id' => $id, 'space_id' => $p['space_id'], 'name' => $p['name'], 'alias' => $p['alias'] ?? null,
-            'kind' => $p['kind'], 'is_active' => true, 'is_archived' => false, 'version' => 1,
+            'kind' => $p['kind'], 'closing_day' => $p['closing_day'] ?? null, 'due_day' => $p['due_day'] ?? null,
+            'is_active' => true, 'is_archived' => false, 'version' => 1,
             'origin_device_id' => $deviceId, 'created_at' => $now, 'updated_at' => $now,
         ]);
 
@@ -290,7 +385,24 @@ final class OperationService
         }
         $this->assertSpaceAccess($userId, $spaceId);
 
+        $purchase = DB::table('card_installments')->where('entry_id', $p['entry_id'])->get();
+        $payment = DB::table('card_installments')->where('paid_entry_id', $p['entry_id'])->get();
+        if (($purchase->isNotEmpty() || $payment->isNotEmpty()) && !empty($p['amounts'])) {
+            throw LedgerException::of('Las compras en cuotas y los pagos de resumen solo se revierten completos.', 'card_partial_reversal');
+        }
+        if ($purchase->contains('status', 'paid')) {
+            throw LedgerException::of('No se puede revertir una compra con cuotas ya pagadas: revierta antes el pago del resumen.', 'installments_paid');
+        }
+
         $r = $this->ledger->reverse($p['entry_id'], $p['reason'], $userId, $deviceId, $p['amounts'] ?? null, $p['accounting_date'] ?? null, $p['reversal_entry_id'] ?? null);
+
+        $now = now()->utc()->format('Y-m-d H:i:s.v');
+        if ($purchase->isNotEmpty()) {
+            DB::table('card_installments')->where('entry_id', $p['entry_id'])->update(['status' => 'cancelled', 'updated_at' => $now]);
+        }
+        if ($payment->isNotEmpty()) {
+            DB::table('card_installments')->where('paid_entry_id', $p['entry_id'])->update(['status' => 'open', 'paid_entry_id' => null, 'paid_at' => null, 'updated_at' => $now]);
+        }
 
         return ['entries' => [['id' => $r['entry_id'], 'number' => $r['number']]]];
     }
