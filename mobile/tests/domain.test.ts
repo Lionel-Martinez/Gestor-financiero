@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { add, cmp, formatAmount, norm, sub, sum, toUnits } from '../src/domain/money'
+import { schedule } from '../src/domain/installments'
 import * as P from '../src/domain/posting'
 import type { CategoryInfo, LedgerAccountInfo } from '../src/domain/types'
 import { validateEntry } from '../src/domain/validator'
@@ -105,5 +106,27 @@ describe('posting', () => {
   it('rechaza importes no positivos', () => {
     expect(() => P.expense(PER, 'ARS', 'a', 'b', '0', 'food', 'x')).toThrow()
     expect(() => P.expense(PER, 'ARS', 'a', 'b', '-5', 'food', 'x')).toThrow()
+  })
+})
+
+
+describe('cuotas de tarjeta (sin interés)', () => {
+  it('mismo cronograma que el servidor', () => {
+    const a = schedule('2026-11-10', 20, 5, '30000', 3)
+    expect(a.map((x) => x.statementMonth)).toEqual(['2026-11', '2026-12', '2027-01'])
+    expect(a.map((x) => x.dueDate)).toEqual(['2026-12-05', '2027-01-05', '2027-02-05'])
+    expect(schedule('2026-11-20', 20, 5, '100', 1)[0].statementMonth).toBe('2026-11')
+    expect(schedule('2026-11-21', 20, 5, '100', 1)[0].statementMonth).toBe('2026-12')
+    expect(schedule('2026-12-25', 20, 5, '100', 1)[0].statementMonth).toBe('2027-01')
+    expect(schedule('2026-11-10', 10, 25, '100', 1)[0].dueDate).toBe('2026-11-25')
+  })
+  it('el resto va a la última cuota y la suma es exacta', () => {
+    const s = schedule('2026-11-10', 20, 5, '100', 3)
+    expect(s.map((x) => x.amount)).toEqual(['33.3333', '33.3333', '33.3334'])
+    expect(sum(s.map((x) => x.amount))).toBe('100.0000')
+  })
+  it('rechaza datos inválidos', () => {
+    const bad: [string, number, number, string, number][] = [['2026-02-30', 20, 5, '10', 1], ['2026-11-10', 29, 5, '10', 1], ['2026-11-10', 20, 0, '10', 1], ['2026-11-10', 20, 5, '10', 0], ['2026-11-10', 20, 5, '10', 61], ['2026-11-10', 20, 5, '0', 1], ['2026-11-10', 20, 5, '-5', 2]]
+    for (const [a, b, c, d, e] of bad) expect(() => schedule(a, b, c, d, e)).toThrow()
   })
 })

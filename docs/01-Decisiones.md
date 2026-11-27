@@ -35,4 +35,12 @@ Las tensiones y su resolución completa están en [[02-Arquitectura]] y [[03-Mod
 - **D-2 Resumen anual**: tabla año por año (ingresos, gastos, resultado) por fecha contable, **por moneda**. La conversión "Todo en ARS" queda pendiente hasta que la app reciba cotizaciones ([[05-Roadmap]] R-6).
 - **D-3 Navegación**: barra inferior Inicio · Movimientos · Nuevo · Anual; Cuentas sigue dentro de Inicio (pantalla de Cuentas sin diseñar).
 - **D-4 Rediseño visual: propuesta C** (clara, sobria, verde `#1E7B4F`, listas densas tipo extracto, barra superior verde con pestañas subrayadas, sistema tipográfico del dispositivo). Reemplaza a D-1 (B oscura) porque la B resultó "demasiado IA". El modo oscuro sigue disponible en Ajustes con la misma paleta verde. Pendiente de que Lionel la vea en la app real.
+- **D-5 Tarjetas de crédito y cuotas, versión 1** (alcance elegido por Lionel: *sin interés + pago del resumen*). Supuestos, pendientes de tu aprobación:
+  1. El **gasto se reconoce completo al comprar** (Debe gasto / Haber tarjeta, que es un pasivo). Las cuotas no son gastos: solo ordenan lo que se paga en cada resumen (coherente con S-3).
+  2. Cada tarjeta tiene **día de cierre y día de vencimiento** (1 a 28). Una compra hasta el día de cierre inclusive entra en el resumen de ese mes; después, en el siguiente.
+  3. La cuota *k* va en el resumen *k − 1* meses después del primero. El vencimiento es el día indicado del mes del cierre si cae después del cierre; si no, del mes siguiente.
+  4. El importe se reparte en partes iguales a 4 decimales y el resto va a la **última cuota**.
+  5. **Pagar un resumen** es una transferencia desde una cuenta de fondos a la tarjeta (Debe tarjeta / Haber fondos) por el total del resumen y marca esas cuotas como pagadas. En V1 solo se paga el resumen completo.
+  6. Sin interés: el interés de las cuotas (S-3) queda para una segunda etapa.
+  - Etapas: A) reglas de cálculo (hecha, con tests en servidor y app); B) tablas y operaciones en el servidor; C) sincronización y base local; D) pantallas (compra en cuotas y resúmenes).
 
