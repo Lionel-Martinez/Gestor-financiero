@@ -85,7 +85,7 @@ final class CardsTest extends TestCase
         $this->assertSame('30000.0000', $this->debt($card));                       // la deuda es el precio completo
         $rows = DB::table('card_installments')->orderBy('installment_no')->get();
         $this->assertSame(['2026-11', '2026-12', '2027-01'], $rows->pluck('statement_month')->all());
-        $this->assertSame(['10000.0000', '10000.0000', '10000.0000'], $rows->pluck('amount')->map(fn ($a) => (string) $a)->all());
+        $this->assertSame(['10000.0000', '10000.0000', '10000.0000'], $rows->pluck('amount')->map(fn ($a) => Decimal::norm((string) $a))->all());
         $this->assertSame(['open'], $rows->pluck('status')->unique()->values()->all());
     }
 
