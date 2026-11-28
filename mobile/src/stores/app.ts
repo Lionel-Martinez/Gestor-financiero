@@ -20,6 +20,7 @@ interface State {
   dashboard: repo.DashboardData | null
   movements: repo.RecentEntry[]
   annual: repo.AnnualRow[]
+  statements: repo.Statement[]
   newOp: null | 'income' | 'expense' | 'transfer'
   context: Context
   period: PeriodKey
@@ -36,7 +37,7 @@ interface State {
 
 export const useApp = defineStore('app', {
   state: (): State => ({
-    ready: false, db: null, spaces: [], accounts: [], accountCurrencies: [], categories: [], currencies: [], balances: [], dashboard: null, movements: [], annual: [], newOp: null,
+    ready: false, db: null, spaces: [], accounts: [], accountCurrencies: [], categories: [], currencies: [], balances: [], dashboard: null, movements: [], annual: [], statements: [], newOp: null,
     context: 'general', period: 'month', custom: { from: '', to: '' }, counts: { pending: 0, problems: 0 }, problems: [],
     loggedIn: false, syncing: false, lastSync: null, message: null, theme: 'light', serverUrl: '',
   }),
@@ -89,6 +90,7 @@ export const useApp = defineStore('app', {
       this.dashboard = await repo.computeDashboard(db, ids, r.from, r.to, r.prevFrom, r.prevTo)
       this.movements = await repo.recentEntries(db, ids, 300)
       this.annual = await repo.computeAnnual(db, ids)
+      this.statements = await repo.listStatements(db, ids)
     },
 
     async setContext(c: Context) { this.context = c; await this.refresh() },

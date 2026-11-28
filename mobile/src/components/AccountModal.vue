@@ -21,12 +21,14 @@ const name = ref('')
 const alias = ref('')
 const kind = ref<FinancialKind>('bank')
 const rows = ref<{ currency: string; opening: string }[]>([{ currency: 'ARS', opening: '' }])
+const closingDay = ref('')
+const dueDay = ref('')
 const isCard = computed(() => kind.value === 'credit_card')
 
 watch(() => props.open, (o) => {
   if (!o) return
   spaceId.value = app.context === 'general' ? '' : app.activeSpaceIds[0]
-  name.value = alias.value = ''
+  name.value = alias.value = closingDay.value = dueDay.value = ''
   kind.value = 'bank'
   rows.value = [{ currency: 'ARS', opening: '' }]
 })
@@ -40,7 +42,14 @@ async function submit() {
     currencies.push({ currency: r.currency, openingBalance: opening })
   }
   if (new Set(currencies.map((c) => c.currency)).size !== currencies.length) { app.message = 'No repitas la misma moneda en una cuenta.'; return }
-  const ok = await app.write((db) => createAccount(db, { spaceId: spaceId.value, name: name.value, alias: alias.value, kind: kind.value, currencies }))
+  let closing: number | undefined
+  let due: number | undefined
+  if (isCard.value) {
+    closing = Number(closingDay.value)
+    due = Number(dueDay.value)
+    if (![closing, due].every((d) => Number.isInteger(d) && d >= 1 && d <= 28)) { app.message = 'Indica el día de cierre y el de vencimiento de la tarjeta (de 1 a 28).'; return }
+  }
+  const ok = await app.write((db) => createAccount(db, { spaceId: spaceId.value, name: name.value, alias: alias.value, kind: kind.value, closingDay: closing, dueDay: due, currencies }))
   if (ok) emit('close')
 }
 </script>
@@ -66,6 +75,12 @@ async function submit() {
           <IonSelectOption v-for="k in KINDS" :key="k.value" :value="k.value">{{ k.label }}</IonSelectOption>
         </IonSelect>
       </IonItem>
+
+      <template v-if="isCard">
+        <p class="gf-section" style="padding-left: 0">Resumen de la tarjeta</p>
+        <IonItem><IonInput v-model="closingDay" type="number" inputmode="numeric" min="1" max="28" label="Día de cierre" label-placement="stacked" placeholder="Ej.: 20" helper-text="Las compras hasta ese día entran en el resumen del mes." /></IonItem>
+        <IonItem><IonInput v-model="dueDay" type="number" inputmode="numeric" min="1" max="28" label="Día de vencimiento" label-placement="stacked" placeholder="Ej.: 5" helper-text="Si es anterior al cierre, vence el mes siguiente." /></IonItem>
+      </template>
 
       <p class="gf-section" style="padding-left: 0">Monedas y {{ isCard ? 'deuda inicial' : 'saldo inicial' }}</p>
       <div v-for="(r, i) in rows" :key="i" class="gf-row">
