@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { computeAnnual, computeDashboard, createAccount, discardOperation, DomainError, listBalances, markOperation, outboxCounts, recordIncomeOrExpense, recordTransfer } from '../src/data/repo'
+import { computeAnnual, computeDashboard, createAccount, discardOperation, DomainError, listBalances, listStatements, markOperation, outboxCounts, pendingOutbox, recordCardPayment, recordCardPurchase, recordIncomeOrExpense, recordTransfer, setCardDays } from '../src/data/repo'
 import type { SqlDriver } from '../src/db/driver'
 import { initSchema } from '../src/db'
 import { SqlJsDriver } from '../src/db/sqljs'
@@ -143,5 +143,76 @@ describe('resumen anual', () => {
     await confirmAllPendingAsServer()
     const year = NOW.slice(0, 4)
     expect(await computeAnnual(db, [PER])).toEqual([{ year, income: { ARS: '4000.0000' }, expense: { ARS: '1500.0000' }, result: { ARS: '2500.0000' } }])   // la apertura no es ingreso
+  })
+})
+
+describe('tarjetas de crédito y cuotas', () => {
+  const D = '2026-11-10T15:00:00.000Z'
+  async function setup() {
+    const card = await createAccount(db, { spaceId: PER, name: 'Visa', kind: 'credit_card', closingDay: 20, dueDay: 5, currencies: [{ currency: 'ARS', openingBalance: '0' }] })
+    const bank = await createAccount(db, { spaceId: PER, name: 'Banco', kind: 'bank', currencies: [{ currency: 'ARS', openingBalance: '50000' }] })
+    return { card, bank }
+  }
+  const buy = (card: string, amount: string, n: number, date = '2026-11-10') =>
+    recordCardPurchase(db, { spaceId: PER, financialAccountId: card, currency: 'ARS', amount, installments: n, categoryId: FOOD, occurredAt: `${date}T15:00:00.000Z`, purchaseDate: date })
+
+  it('la compra en cuotas arma el cronograma local y encola la operación con los ids de las cuotas', async () => {
+    const { card } = await setup()
+    const opId = await buy(card, '30000', 3)
+    const st = await listStatements(db, [PER])
+    expect(st.map((x) => [x.statementMonth, x.open, x.installments, x.pending])).toEqual([['2026-11', '10000.0000', 1, true], ['2026-12', '10000.0000', 1, true], ['2027-01', '10000.0000', 1, true]])
+    const op = (await pendingOutbox(db)).find((o) => o.id === opId)!
+    expect(op.action).toBe('card_purchase')
+    const payload = JSON.parse(op.payload) as { installment_ids: string[]; installments: number }
+    expect(payload.installments).toBe(3)
+    expect(new Set(payload.installment_ids).size).toBe(3)
+  })
+
+  it('pagar el resumen cancela solo esas cuotas y suma varias compras', async () => {
+    const { card, bank } = await setup()
+    await buy(card, '30000', 3)
+    await buy(card, '4000', 1, '2026-11-15')
+    await recordCardPayment(db, { spaceId: PER, financialAccountId: card, fromAccountId: bank, currency: 'ARS', statementMonth: '2026-11', occurredAt: '2026-12-04T15:00:00.000Z' })
+    const st = await listStatements(db, [PER])
+    const nov = st.find((x) => x.statementMonth === '2026-11')!
+    expect([nov.open, nov.paid]).toEqual(['0.0000', '14000.0000'])
+    expect(st.find((x) => x.statementMonth === '2026-12')!.open).toBe('10000.0000')
+    await expect(recordCardPayment(db, { spaceId: PER, financialAccountId: card, fromAccountId: bank, currency: 'ARS', statementMonth: '2026-11', occurredAt: D })).rejects.toBeInstanceOf(DomainError)
+  })
+
+  it('si el servidor rechaza el pago, las cuotas vuelven a quedar abiertas; si rechaza la compra, desaparecen', async () => {
+    const { card, bank } = await setup()
+    const buyOp = await buy(card, '9000', 3)
+    const payOp = await recordCardPayment(db, { spaceId: PER, financialAccountId: card, fromAccountId: bank, currency: 'ARS', statementMonth: '2026-11', occurredAt: '2026-12-04T15:00:00.000Z' })
+    await markOperation(db, payOp, 'rejected', 'sin fondos')
+    expect((await listStatements(db, [PER])).find((x) => x.statementMonth === '2026-11')!.open).toBe('3000.0000')
+    await markOperation(db, buyOp, 'rejected', 'categoría inválida')
+    expect(await listStatements(db, [PER])).toEqual([])
+    await discardOperation(db, buyOp)
+    expect(await db.all("SELECT id FROM card_installments")).toEqual([])
+  })
+
+  it('exige tarjeta con cierre y vencimiento, y valida los días', async () => {
+    const bank = await createAccount(db, { spaceId: PER, name: 'Banco', kind: 'bank', currencies: [{ currency: 'ARS', openingBalance: '0' }] })
+    await expect(buy(bank, '100', 2)).rejects.toBeInstanceOf(DomainError)                                           // no es tarjeta
+    const bare = await createAccount(db, { spaceId: PER, name: 'Master', kind: 'credit_card', currencies: [{ currency: 'ARS', openingBalance: '0' }] })
+    await expect(buy(bare, '100', 2)).rejects.toBeInstanceOf(DomainError)                                           // sin cierre ni vencimiento
+    await expect(setCardDays(db, bare, 31, 5)).rejects.toBeInstanceOf(DomainError)
+    await setCardDays(db, bare, 15, 28)
+    await buy(bare, '100', 2)
+    expect((await listStatements(db, [PER])).length).toBe(2)
+    await expect(createAccount(db, { spaceId: PER, name: 'X', kind: 'bank', closingDay: 10, currencies: [{ currency: 'ARS', openingBalance: '0' }] })).rejects.toBeInstanceOf(DomainError)
+  })
+
+  it('la cuota que llega del servidor reemplaza a la provisional (mismo id)', async () => {
+    const { card } = await setup()
+    const opId = await buy(card, '6000', 2)
+    const payload = JSON.parse((await pendingOutbox(db)).find((o) => o.id === opId)!.payload) as { installment_ids: string[]; entry_id: string }
+    await applyPull(db, { server_time: NOW, next_cursor: NOW, has_more: false, spaces: [], currencies: [], financial_accounts: [], financial_account_currencies: [], ledger_accounts: [], categories: [], entries: [], tombstones: [],
+      card_installments: [{ id: payload.installment_ids[0], space_id: PER, financial_account_id: card, entry_id: payload.entry_id, installment_no: 1, installments_total: 2, currency: 'ARS', amount: '3000.0000', statement_month: '2026-11', due_date: '2026-12-05', status: 'paid', paid_entry_id: 'abc' }] })
+    const st = await listStatements(db, [PER])
+    const nov = st.find((x) => x.statementMonth === '2026-11')!
+    expect([nov.paid, nov.open, nov.pending]).toEqual(['3000.0000', '0.0000', false])
+    expect(await db.all('SELECT id FROM card_installments')).toHaveLength(2)                                        // no se duplicó
   })
 })

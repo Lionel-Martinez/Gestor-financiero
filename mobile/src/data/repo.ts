@@ -1,4 +1,5 @@
 import type { SqlDriver } from '@/db/driver'
+import { schedule } from '@/domain/installments'
 import { cmp, fromUnits, isZero, sub, toUnits } from '@/domain/money'
 import * as P from '@/domain/posting'
 import type { AccountType, CategoryInfo, FinancialKind, LedgerAccountInfo, Posting } from '@/domain/types'
@@ -19,6 +20,7 @@ export interface Space { id: string; code: string; name: string }
 export interface FinancialAccountRow {
   id: string; space_id: string; name: string; alias: string | null; kind: FinancialKind
   is_active: number; is_archived: number; version: number; pending: number
+  closing_day: number | null; due_day: number | null
 }
 export interface AccountCurrencyRow { id: string; space_id: string; financial_account_id: string; currency: string; ledger_account_id: string }
 export interface CategoryRow { id: string; space_id: string | null; parent_id: string | null; name: string; kind: string; group_key: string | null; is_active: number }
@@ -101,17 +103,26 @@ export interface NewAccountInput {
   alias?: string
   kind: FinancialKind
   currencies: { currency: string; openingBalance: string }[]
+  /** Solo tarjetas de crédito: días de cierre y de vencimiento (1 a 28). */
+  closingDay?: number
+  dueDay?: number
+}
+
+function checkCardDays(closing?: number | null, due?: number | null): void {
+  for (const d of [closing, due]) if (d != null && (!Number.isInteger(d) || d < 1 || d > 28)) throw new DomainError(['El día de cierre y el de vencimiento deben estar entre 1 y 28.'])
 }
 
 export async function createAccount(db: SqlDriver, input: NewAccountInput): Promise<string> {
   if (!input.name.trim()) throw new DomainError(['El nombre es obligatorio.'])
   if (!input.currencies.length) throw new DomainError(['La cuenta necesita al menos una moneda.'])
   const isCard = input.kind === 'credit_card'
+  if (!isCard && (input.closingDay != null || input.dueDay != null)) throw new DomainError(['El cierre y el vencimiento solo aplican a tarjetas de crédito.'])
+  checkCardDays(input.closingDay, input.dueDay)
   const id = uuid()
   const opId = uuid()
 
   return db.transaction(async () => {
-    await db.run('INSERT INTO financial_accounts(id, space_id, name, alias, kind, pending) VALUES(?, ?, ?, ?, ?, 1)', [id, input.spaceId, input.name.trim(), input.alias?.trim() || null, input.kind])
+    await db.run('INSERT INTO financial_accounts(id, space_id, name, alias, kind, closing_day, due_day, pending) VALUES(?, ?, ?, ?, ?, ?, ?, 1)', [id, input.spaceId, input.name.trim(), input.alias?.trim() || null, input.kind, input.closingDay ?? null, input.dueDay ?? null])
 
     const currencies: Record<string, unknown>[] = []
     for (const c of input.currencies) {
@@ -136,7 +147,7 @@ export async function createAccount(db: SqlDriver, input: NewAccountInput): Prom
 
     await enqueue(
       db,
-      { entity: 'financial_account', action: 'create', payload: { id, space_id: input.spaceId, name: input.name.trim(), alias: input.alias?.trim() || null, kind: input.kind, occurred_at: nowIso(), currencies } },
+      { entity: 'financial_account', action: 'create', payload: { id, space_id: input.spaceId, name: input.name.trim(), alias: input.alias?.trim() || null, kind: input.kind, closing_day: input.closingDay ?? null, due_day: input.dueDay ?? null, occurred_at: nowIso(), currencies } },
       opId,
     )
     return id
@@ -232,6 +243,151 @@ export async function recordTransfer(db: SqlDriver, i: TransferInput): Promise<s
   })
 }
 
+
+// ----------------------------------------------------------------- tarjetas de crédito (D-5)
+
+/** Fecha local (YYYY-MM-DD) de un instante ISO: el día en que el usuario hizo la compra. */
+const localDate = (iso: string): string => {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+async function cardOf(db: SqlDriver, spaceId: string, id: string): Promise<FinancialAccountRow> {
+  const r = (await db.all<FinancialAccountRow>('SELECT * FROM financial_accounts WHERE id = ? AND space_id = ?', [id, spaceId]))[0]
+  if (!r || r.kind !== 'credit_card') throw new DomainError(['La cuenta no es una tarjeta de crédito de este espacio.'])
+  return r
+}
+
+/** Define o corrige el cierre y el vencimiento de una tarjeta ya creada. */
+export async function setCardDays(db: SqlDriver, accountId: string, closingDay: number, dueDay: number): Promise<void> {
+  checkCardDays(closingDay, dueDay)
+  if (closingDay == null || dueDay == null) throw new DomainError(['Indica el día de cierre y el de vencimiento.'])
+  await db.transaction(async () => {
+    const a = (await db.all<FinancialAccountRow>('SELECT * FROM financial_accounts WHERE id = ?', [accountId]))[0]
+    if (!a || a.kind !== 'credit_card') throw new DomainError(['La cuenta no es una tarjeta de crédito.'])
+    await db.run('UPDATE financial_accounts SET closing_day = ?, due_day = ? WHERE id = ?', [closingDay, dueDay, accountId])
+    await enqueue(db, { entity: 'financial_account', action: 'update', payload: { id: accountId, changes: { closing_day: closingDay, due_day: dueDay } }, baseVersion: a.version })
+  })
+}
+
+export interface CardPurchaseInput {
+  spaceId: string
+  financialAccountId: string
+  currency: string
+  amount: string
+  installments: number
+  categoryId: string
+  occurredAt: string
+  /** Día local de la compra (YYYY-MM-DD); por defecto, el de occurredAt. */
+  purchaseDate?: string
+  description?: string
+}
+
+/** Compra con tarjeta en 1 a 60 cuotas sin interés: un asiento por el precio completo y el cronograma de cuotas. */
+export async function recordCardPurchase(db: SqlDriver, i: CardPurchaseInput): Promise<string> {
+  const entryId = uuid()
+  const opId = uuid()
+  return db.transaction(async () => {
+    const card = await cardOf(db, i.spaceId, i.financialAccountId)
+    if (card.closing_day == null || card.due_day == null) throw new DomainError(['Configura el día de cierre y el de vencimiento de la tarjeta antes de cargar compras.'])
+    const date = i.purchaseDate ?? localDate(i.occurredAt)
+    const plan = schedule(date, card.closing_day, card.due_day, i.amount, i.installments)
+
+    const funds = await fundsLedger(db, i.spaceId, i.financialAccountId, i.currency)
+    const posting = P.expense(i.spaceId, i.currency, funds, await systemAccount(db, i.spaceId, 'expense_general'), i.amount, i.categoryId, i.occurredAt, i.description)
+    await validateOrThrow(db, posting)
+    await insertProvisional(db, posting, entryId, opId, opId)
+
+    const ids = plan.map(() => uuid())
+    for (const [k, c] of plan.entries()) {
+      await db.run(
+        `INSERT INTO card_installments(id, space_id, financial_account_id, entry_id, installment_no, installments_total, currency, amount, statement_month, due_date, status, pending)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 1)`,
+        [ids[k], i.spaceId, i.financialAccountId, entryId, c.no, plan.length, i.currency, c.amount, c.statementMonth, c.dueDate],
+      )
+    }
+    await enqueue(db, {
+      entity: 'operation', action: 'card_purchase',
+      payload: { entry_id: entryId, space_id: i.spaceId, financial_account_id: i.financialAccountId, currency: i.currency, amount: i.amount, installments: plan.length, installment_ids: ids, category_id: i.categoryId, occurred_at: i.occurredAt, purchase_date: date, description: i.description ?? '' },
+    }, opId)
+    return opId
+  })
+}
+
+export interface CardPaymentInput {
+  spaceId: string
+  financialAccountId: string
+  fromAccountId: string
+  currency: string
+  statementMonth: string
+  occurredAt: string
+}
+
+/** Paga el resumen completo (todas sus cuotas abiertas) desde una cuenta de fondos. */
+export async function recordCardPayment(db: SqlDriver, i: CardPaymentInput): Promise<string> {
+  const entryId = uuid()
+  const opId = uuid()
+  return db.transaction(async () => {
+    await cardOf(db, i.spaceId, i.financialAccountId)
+    const due = await db.all<{ id: string; amount: string }>(
+      "SELECT id, amount FROM card_installments WHERE financial_account_id = ? AND currency = ? AND statement_month = ? AND status = 'open'",
+      [i.financialAccountId, i.currency, i.statementMonth],
+    )
+    if (!due.length) throw new DomainError(['Ese resumen no tiene cuotas pendientes de pago.'])
+    const total = fromUnits(due.reduce((a, r) => a + toUnits(r.amount), 0n))
+
+    const from = await fundsLedger(db, i.spaceId, i.fromAccountId, i.currency)
+    const to = await fundsLedger(db, i.spaceId, i.financialAccountId, i.currency)
+    const posting = P.ownTransfer(i.spaceId, i.currency, from, to, total, i.occurredAt, `Pago de resumen ${i.statementMonth}`)
+    await validateOrThrow(db, posting)
+    await insertProvisional(db, posting, entryId, opId, opId)
+    for (const r of due) await db.run("UPDATE card_installments SET status = 'paid', paid_entry_id = ?, pending = 1 WHERE id = ?", [entryId, r.id])
+    await enqueue(db, {
+      entity: 'operation', action: 'card_payment',
+      payload: { entry_id: entryId, space_id: i.spaceId, financial_account_id: i.financialAccountId, from_financial_account_id: i.fromAccountId, currency: i.currency, statement_month: i.statementMonth, occurred_at: i.occurredAt },
+    }, opId)
+    return opId
+  })
+}
+
+export interface Statement {
+  financialAccountId: string
+  cardName: string
+  spaceId: string
+  currency: string
+  statementMonth: string
+  dueDate: string
+  /** Lo que falta pagar de ese resumen. */
+  open: string
+  paid: string
+  installments: number
+  /** Hay operaciones de esa tarjeta que aún no confirmó el servidor. */
+  pending: boolean
+}
+
+/** Resúmenes por tarjeta, moneda y mes (el más próximo primero). Las cuotas canceladas no cuentan. */
+export async function listStatements(db: SqlDriver, spaceIds: string[]): Promise<Statement[]> {
+  if (!spaceIds.length) return []
+  const ph = spaceIds.map(() => '?').join(',')
+  const rows = await db.all<{ financial_account_id: string; name: string; space_id: string; currency: string; statement_month: string; due_date: string; amount: string; status: string; pending: number }>(
+    `SELECT c.financial_account_id, a.name, c.space_id, c.currency, c.statement_month, c.due_date, c.amount, c.status, c.pending
+       FROM card_installments c JOIN financial_accounts a ON a.id = c.financial_account_id
+      WHERE c.space_id IN (${ph}) AND c.status IN ('open','paid')`,
+    spaceIds,
+  )
+  const map = new Map<string, { s: Statement; o: bigint; p: bigint }>()
+  for (const r of rows) {
+    const key = `${r.financial_account_id}|${r.currency}|${r.statement_month}`
+    const cur = map.get(key) ?? { s: { financialAccountId: r.financial_account_id, cardName: r.name, spaceId: r.space_id, currency: r.currency, statementMonth: r.statement_month, dueDate: r.due_date, open: '0.0000', paid: '0.0000', installments: 0, pending: false }, o: 0n, p: 0n }
+    if (r.status === 'open') cur.o += toUnits(r.amount); else cur.p += toUnits(r.amount)
+    cur.s.installments++
+    if (r.due_date > cur.s.dueDate) cur.s.dueDate = r.due_date
+    if (r.pending) cur.s.pending = true
+    map.set(key, cur)
+  }
+  return [...map.values()].map(({ s, o, p }) => ({ ...s, open: fromUnits(o), paid: fromUnits(p) })).sort((a, b) => a.statementMonth.localeCompare(b.statementMonth) || a.cardName.localeCompare(b.cardName))
+}
+
 // ----------------------------------------------------------------- cola
 
 export interface OutboxRow { seq: number; id: string; entity: string; action: string; payload: string; base_version: number | null; client_created_at: string; status: string; error: string | null; attempts: number }
@@ -245,11 +401,21 @@ export async function outboxCounts(db: SqlDriver): Promise<{ pending: number; pr
   return { pending: n(['pending']), problems: n(['rejected', 'conflict']) }
 }
 
+/** Si una operación de tarjeta no se confirma: sus cuotas desaparecen (compra) o vuelven a quedar abiertas (pago). */
+async function undoInstallments(db: SqlDriver, opId: string): Promise<void> {
+  const mine = "(SELECT id FROM entries WHERE sync_op_id = ? AND status <> 'confirmed')"
+  await db.run(`UPDATE card_installments SET status = 'open', paid_entry_id = NULL WHERE paid_entry_id IN ${mine}`, [opId])
+  await db.run(`UPDATE card_installments SET status = 'cancelled' WHERE entry_id IN ${mine} AND pending = 1`, [opId])
+}
+
 /** Marca una operación como rechazada/en conflicto; sus asientos provisionales dejan de contar en los saldos. */
 export async function markOperation(db: SqlDriver, opId: string, status: 'applied' | 'rejected' | 'conflict', error: string | null, result?: unknown): Promise<void> {
   await db.transaction(async () => {
     await db.run('UPDATE outbox SET status = ?, error = ?, result = ?, attempts = attempts + 1 WHERE id = ?', [status, error, result === undefined ? null : JSON.stringify(result), opId])
-    if (status === 'rejected' || status === 'conflict') await db.run("UPDATE entries SET status = 'rejected' WHERE sync_op_id = ? AND status = 'pending'", [opId])
+    if (status === 'rejected' || status === 'conflict') {
+      await undoInstallments(db, opId)
+      await db.run("UPDATE entries SET status = 'rejected' WHERE sync_op_id = ? AND status = 'pending'", [opId])
+    }
   })
 }
 
@@ -257,6 +423,8 @@ export async function markOperation(db: SqlDriver, opId: string, status: 'applie
 export async function discardOperation(db: SqlDriver, opId: string): Promise<void> {
   await db.transaction(async () => {
     const op = (await db.all<OutboxRow>('SELECT * FROM outbox WHERE id = ?', [opId]))[0]
+    await undoInstallments(db, opId)
+    await db.run("DELETE FROM card_installments WHERE status = 'cancelled' AND pending = 1 AND entry_id IN (SELECT id FROM entries WHERE sync_op_id = ? AND status <> 'confirmed')", [opId])
     await db.run("DELETE FROM lines WHERE entry_id IN (SELECT id FROM entries WHERE sync_op_id = ? AND status <> 'confirmed')", [opId])
     await db.run("DELETE FROM entries WHERE sync_op_id = ? AND status <> 'confirmed'", [opId])
     if (op && op.action === 'create') {

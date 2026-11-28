@@ -164,6 +164,7 @@ final class SyncService
             'financial_accounts' => $this->since('financial_accounts', $spaceIds, $cursorStr),
             'financial_account_currencies' => $this->since('financial_account_currencies', $spaceIds, $cursorStr),
             'ledger_accounts' => $this->since('ledger_accounts', $spaceIds, $cursorStr),
+            'card_installments' => $this->since('card_installments', $spaceIds, $cursorStr),
             'categories' => DB::table('categories')->where(fn ($q) => $q->whereNull('space_id')->orWhereIn('space_id', $spaceIds))
                 ->where('updated_at', '>', $cursorStr)->get()->map(fn ($r) => (array) $r)->all(),
             'entries' => $entries->map(fn ($e) => (array) $e + [

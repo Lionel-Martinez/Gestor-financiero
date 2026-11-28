@@ -2,7 +2,6 @@
  * Esquema local (SQLite). Los importes se guardan como TEXT decimal exacto (nunca REAL): las sumas se hacen en BigInt.
  * Los UUID se generan en el dispositivo. `status` de un asiento local: confirmed | pending | rejected.
  */
-export const SCHEMA_VERSION = 1
 
 export const MIGRATIONS: string[][] = [
   [
@@ -41,6 +40,21 @@ export const MIGRATIONS: string[][] = [
        id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, direction TEXT NOT NULL, ok INTEGER NOT NULL, detail TEXT)`,
   ],
 ]
+
+// v2: tarjetas de crédito y cuotas (decisión D-5).
+MIGRATIONS.push([
+  `ALTER TABLE financial_accounts ADD COLUMN closing_day INTEGER`,
+  `ALTER TABLE financial_accounts ADD COLUMN due_day INTEGER`,
+  `CREATE TABLE IF NOT EXISTS card_installments (
+     id TEXT PRIMARY KEY, space_id TEXT NOT NULL, financial_account_id TEXT NOT NULL, entry_id TEXT NOT NULL,
+     installment_no INTEGER NOT NULL, installments_total INTEGER NOT NULL, currency TEXT NOT NULL, amount TEXT NOT NULL,
+     statement_month TEXT NOT NULL, due_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', paid_entry_id TEXT,
+     pending INTEGER NOT NULL DEFAULT 0)`,
+  `CREATE INDEX IF NOT EXISTS idx_installments_statement ON card_installments(financial_account_id, currency, statement_month, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_installments_entry ON card_installments(entry_id)`,
+])
+
+export const SCHEMA_VERSION = MIGRATIONS.length
 
 export async function migrate(run: (sql: string) => Promise<void>, current: number): Promise<number> {
   for (let v = current; v < MIGRATIONS.length; v++) {

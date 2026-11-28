@@ -113,6 +113,7 @@ export interface PullResponse {
   spaces: { id: string; code: string; name: string }[]
   currencies: { code: string; name: string; minor_units: number; kind: string }[]
   financial_accounts: Record<string, unknown>[]
+  card_installments?: Record<string, unknown>[]
   financial_account_currencies: Record<string, unknown>[]
   ledger_accounts: Record<string, unknown>[]
   categories: Record<string, unknown>[]
@@ -131,9 +132,10 @@ export async function applyPull(db: SqlDriver, d: PullResponse): Promise<number>
     for (const c of d.currencies) await db.run('INSERT INTO currencies(code, name, minor_units, kind) VALUES(?, ?, ?, ?) ON CONFLICT(code) DO UPDATE SET name = excluded.name', [c.code, c.name, c.minor_units, c.kind])
     for (const a of d.financial_accounts) {
       await db.run(
-        `INSERT INTO financial_accounts(id, space_id, name, alias, kind, is_active, is_archived, version, pending) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0)
-         ON CONFLICT(id) DO UPDATE SET name = excluded.name, alias = excluded.alias, kind = excluded.kind, is_active = excluded.is_active, is_archived = excluded.is_archived, version = excluded.version, pending = 0`,
-        [a.id, a.space_id, a.name, a.alias ?? null, a.kind, a.is_active ? 1 : 0, a.is_archived ? 1 : 0, a.version],
+        `INSERT INTO financial_accounts(id, space_id, name, alias, kind, closing_day, due_day, is_active, is_archived, version, pending) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, alias = excluded.alias, kind = excluded.kind, closing_day = excluded.closing_day, due_day = excluded.due_day,
+           is_active = excluded.is_active, is_archived = excluded.is_archived, version = excluded.version, pending = 0`,
+        [a.id, a.space_id, a.name, a.alias ?? null, a.kind, a.closing_day ?? null, a.due_day ?? null, a.is_active ? 1 : 0, a.is_archived ? 1 : 0, a.version],
       ); n++
     }
     for (const l of d.ledger_accounts) {
@@ -172,6 +174,16 @@ export async function applyPull(db: SqlDriver, d: PullResponse): Promise<number>
           [l.id, l.entry_id, l.space_id, l.line_no, l.ledger_account_id, String(l.debit), String(l.credit), l.category_id ?? null])
       }
       n++
+    }
+    for (const c of d.card_installments ?? []) {
+      // La cuota del servidor reemplaza a la provisional (mismo UUID) y deja de estar pendiente.
+      await db.run(
+        `INSERT INTO card_installments(id, space_id, financial_account_id, entry_id, installment_no, installments_total, currency, amount, statement_month, due_date, status, paid_entry_id, pending)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+         ON CONFLICT(id) DO UPDATE SET amount = excluded.amount, statement_month = excluded.statement_month, due_date = excluded.due_date,
+           status = excluded.status, paid_entry_id = excluded.paid_entry_id, pending = 0`,
+        [c.id, c.space_id, c.financial_account_id, c.entry_id, c.installment_no, c.installments_total, c.currency, String(c.amount), c.statement_month, String(c.due_date).slice(0, 10), c.status, c.paid_entry_id ?? null],
+      ); n++
     }
     for (const t of d.tombstones) {
       if (t.entity === 'financial_account') await db.run('UPDATE financial_accounts SET is_active = 0, is_archived = ? WHERE id = ?', [t.action === 'archive' ? 1 : 0, t.entity_id])
